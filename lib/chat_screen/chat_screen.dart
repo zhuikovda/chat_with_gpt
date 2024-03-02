@@ -13,48 +13,74 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _openAI = OpenAI.instance.build(
-    token: API_KEY,
+    token: kApiKey,
     baseOption: HttpSetup(receiveTimeout: const Duration(seconds: 5)),
     enableLog: true,
   );
   final ChatUser _user = ChatUser(id: '1');
   final ChatUser _gpt = ChatUser(id: '2');
-  List<ChatMessage> _messages = [];
-  List<ChatUser> _loadResponse = [];
+  final List<ChatMessage> _messages = [];
+  final List<ChatUser> _loadResponse = [];
 
   Future<void> getResponse(ChatMessage message) async {
     setState(() {
       _messages.insert(0, message);
       _loadResponse.add(_gpt);
     });
-    List<Map<String, dynamic>> _history = _messages.reversed.map((message) {
-      if (message.user == _user) {
-        return Messages(role: Role.user, content: message.text).toJson();
-      } else {
-        return Messages(role: Role.assistant, content: message.text).toJson();
+    try {
+      List<Map<String, dynamic>> history = _messages.reversed.map((message) {
+        if (message.user == _user) {
+          return Messages(role: Role.user, content: message.text).toJson();
+        } else {
+          return Messages(role: Role.assistant, content: message.text).toJson();
+        }
+      }).toList();
+      final request = ChatCompleteText(
+        model: GptTurboChatModel(),
+        messages: history,
+        maxToken: 200,
+      );
+      final response = await _openAI.onChatCompletion(request: request);
+      for (var element in response!.choices) {
+        if (element.message != null) {
+          setState(() {
+            _messages.insert(
+                0,
+                ChatMessage(
+                    user: _gpt,
+                    createdAt: DateTime.now(),
+                    text: element.message!.content));
+          });
+        }
       }
-    }).toList();
-    final request = ChatCompleteText(
-      model: GptTurboChatModel(),
-      messages: _history,
-      maxToken: 200,
-    );
-    final response = await _openAI.onChatCompletion(request: request);
-    for (var element in response!.choices) {
-      if (element.message != null) {
-        setState(() {
-          _messages.insert(
-              0,
-              ChatMessage(
-                  user: _gpt,
-                  createdAt: DateTime.now(),
-                  text: element.message!.content));
-        });
-      }
+    } catch (e) {
+      _showErrorMessage(e);
+      rethrow;
+    } finally {
+      setState(() {
+        _loadResponse.remove(_gpt);
+      });
     }
-    setState(() {
-      _loadResponse.remove(_gpt);
-    });
+  }
+
+  Future<dynamic> _showErrorMessage(e) {
+    return showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Error'),
+          content: Text('$e'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('ОК'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
